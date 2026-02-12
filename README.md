@@ -20,16 +20,16 @@
 
 HAWKEYE is a comprehensive, automated reconnaissance framework that combines the power of multiple industry-standard tools into a streamlined workflow.
 
-## ✨ Features
+## Features
 
-- 🎯 All-in-One Reconnaissance - Combines 15+ tools
-- ⚡ Parallel Execution - Maximum speed
-- 📊 Newbie-Friendly Reports - Easy to understand
-- 💾 Resume Capability - Continue interrupted scans
-- 🔄 Multiple Modes - Quick to comprehensive scans
-- 📝 Multiple Formats - TXT, JSON, HTML, MD, CSV
+- All-in-One Reconnaissance - Combines 15+ tools
+- Parallel Execution - Maximum speed
+- Newbie-Friendly Reports - Easy to understand
+- Resume Capability - Continue interrupted scans
+- Multiple Modes - Quick to comprehensive scans
+- Multiple Formats - TXT, JSON, HTML, MD, CSV
 
-## 🛠️ Tools Integrated
+## Tools Integrated
 
 **Discovery:** subfinder, puredns, dnsx, dnsrecon  
 **Scanning:** naabu, nmap  
@@ -38,7 +38,7 @@ HAWKEYE is a comprehensive, automated reconnaissance framework that combines the
 **Vulnerability:** nuclei, enum4linux-ng  
 **Utilities:** gf, anew, notify
 
-## 📦 Installation
+## Installation
 
 ### Quick Install
 ```bash
@@ -84,7 +84,7 @@ echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.bashrc
 pip3 install -e .
 ```
 
-## 🚀 Quick Start
+## Quick Start
 ```bash
 # Full scan
 hawkeye -t example.com
@@ -102,7 +102,7 @@ hawkeye -t example.com -d
 hawkeye -t example.com --interactive
 ```
 
-## 📋 Usage
+## Usage
 
 ### Scan Modes
 ```
@@ -130,7 +130,7 @@ full        Complete scan (default)
 --resume         Resume scan
 ```
 
-## 🎯 Workflow
+## Workflow
 
 1. **Discovery** - Find subdomains
 2. **Scanning** - Port and service detection
@@ -138,34 +138,34 @@ full        Complete scan (default)
 4. **Content** - Directory discovery
 5. **Vulnerability** - Security scanning
 
-## 📊 Reports
+## Reports
 
 HAWKEYE generates easy-to-read reports:
 ```
-📊 RECONNAISSANCE REPORT
+RECONNAISSANCE REPORT
 ═══════════════════════════════════════════
-📍 SUBDOMAINS FOUND: 23
-🔌 OPEN PORTS: 48
-🌐 WEB APPS: 15
-🎯 VULNERABILITIES: 12
+SUBDOMAINS FOUND: 23
+OPEN PORTS: 48
+WEB APPS: 15
+VULNERABILITIES: 12
 ```
 
 Formats: TXT, JSON, HTML, Markdown, CSV
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 **For authorized security testing only.**
 
-- ✅ Use on systems you own
-- ✅ Authorized penetration testing
-- ✅ Bug bounty programs
-- ❌ Unauthorized access is illegal
+- Use on systems you own
+- Authorized penetration testing
+- Bug bounty programs
+- Unauthorized access is illegal
 
-## 📝 License
+## License
 
 MIT License
 
-## 🙏 Credits
+## Credits
 
 Built with tools from ProjectDiscovery, tomnomnom, and the security community.
 
