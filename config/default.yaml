@@ -1,0 +1,43 @@
+
+# HAWKEYE Default Configuration
+
+# Target settings
+target: ""
+mode: full
+wordlist_tier: 2
+
+# Performance settings
+threads: 50
+rate_limit: 150
+timeout: 10
+
+# Scan options
+udp_scan: false
+stealth: false
+interactive: false
+
+# Output settings
+output_dir: ./hawkeye-output
+report_format:
+  - txt
+  - html
+
+# Tool control
+skip_tools: []
+only_tools: []
+
+# Notifications
+notify: []
+
+# Custom wordlists (leave empty to use defaults)
+custom_wordlists:
+  subdomains: ""
+  directories: ""
+  files: ""
+  parameters: ""
+
+# Advanced settings
+max_retries: 3
+user_agent: "HAWKEYE/1.0"
+follow_redirects: true
+verify_ssl: false
