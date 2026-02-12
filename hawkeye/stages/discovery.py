@@ -2,6 +2,7 @@
 """Stage 1: Subdomain Discovery"""
 
 from pathlib import Path
+from hawkeye.tools.subfinder import Subfinder
 from hawkeye.ui.logger import get_logger
 
 logger = get_logger()
@@ -25,21 +26,44 @@ class DiscoveryStage:
         logger.info(f"[*] Target: {self.target}")
         logger.info(f"[*] Output: {stage_dir}")
         
-        # Placeholder - tools will be added later
-        logger.warning("[!] This stage is a placeholder")
-        logger.info("[*] Tool integrations coming soon...")
+        all_subdomains = set()
         
-        # Create placeholder results
-        results['status'] = 'placeholder'
-        results['message'] = 'Stage implementation in progress'
+        # Run subfinder if not skipped
+        if self._should_run_tool('subfinder'):
+            subfinder = Subfinder(self.config)
+            subfinder_output = stage_dir / 'subfinder.txt'
+            
+            subfinder_results = subfinder.run(self.target, subfinder_output)
+            results['subfinder'] = subfinder_results
+            
+            if subfinder_results.get('status') == 'success':
+                all_subdomains.update(subfinder_results.get('subdomains', []))
+        
+        # Save combined results
+        combined_file = stage_dir / 'all_subdomains.txt'
+        if all_subdomains:
+            with open(combined_file, 'w') as f:
+                for subdomain in sorted(all_subdomains):
+                    f.write(f"{subdomain}\n")
+            
+            logger.info(f"[✓] Total unique subdomains: {len(all_subdomains)}")
+            logger.info(f"[✓] Saved to: {combined_file}")
+        else:
+            logger.warning("[!] No subdomains found")
+            # Create empty file
+            combined_file.touch()
+        
+        results['total_subdomains'] = len(all_subdomains)
+        results['subdomains_file'] = str(combined_file)
         results['stage_dir'] = str(stage_dir)
         
-        # Create a placeholder output file
-        placeholder_file = stage_dir / 'subdomains.txt'
-        with open(placeholder_file, 'w') as f:
-            f.write(f"# Subdomain discovery for {self.target}\n")
-            f.write("# This is a placeholder - tool integration coming soon\n")
-        
-        logger.info(f"[*] Created placeholder: {placeholder_file}")
-        
         return results
+    
+    def _should_run_tool(self, tool_name):
+        """Check if tool should be run"""
+        if self.only_tools and tool_name not in self.only_tools:
+            return False
+        if tool_name in self.skip_tools:
+            return False
+        return True
+
