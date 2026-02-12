@@ -1,8 +1,14 @@
 
+
+
+
 """Stage 1: Subdomain Discovery"""
 
 from pathlib import Path
 from hawkeye.tools.subfinder import Subfinder
+from hawkeye.tools.puredns import Puredns
+from hawkeye.tools.dnsx import Dnsx
+from hawkeye.tools.dnsrecon import Dnsrecon
 from hawkeye.ui.logger import get_logger
 
 logger = get_logger()
@@ -25,11 +31,13 @@ class DiscoveryStage:
         logger.info("[*] Stage 1: Subdomain Discovery")
         logger.info(f"[*] Target: {self.target}")
         logger.info(f"[*] Output: {stage_dir}")
+        logger.info("")
         
         all_subdomains = set()
         
-        # Run subfinder if not skipped
+        # Step 1: Subdomain Enumeration with subfinder
         if self._should_run_tool('subfinder'):
+            logger.info("[*] Step 1/4: Subdomain Enumeration")
             subfinder = Subfinder(self.config)
             subfinder_output = stage_dir / 'subfinder.txt'
             
@@ -38,24 +46,75 @@ class DiscoveryStage:
             
             if subfinder_results.get('status') == 'success':
                 all_subdomains.update(subfinder_results.get('subdomains', []))
+            
+            logger.info("")
         
-        # Save combined results
-        combined_file = stage_dir / 'all_subdomains.txt'
+        # Save all discovered subdomains before resolution
+        all_subdomains_file = stage_dir / 'all_subdomains.txt'
         if all_subdomains:
-            with open(combined_file, 'w') as f:
+            with open(all_subdomains_file, 'w') as f:
                 for subdomain in sorted(all_subdomains):
                     f.write(f"{subdomain}\n")
-            
-            logger.info(f"[✓] Total unique subdomains: {len(all_subdomains)}")
-            logger.info(f"[✓] Saved to: {combined_file}")
+            logger.info(f"[*] Total subdomains found: {len(all_subdomains)}")
         else:
-            logger.warning("[!] No subdomains found")
-            # Create empty file
-            combined_file.touch()
+            all_subdomains_file.touch()
+            logger.warning("[!] No subdomains discovered")
+        
+        # Step 2: DNS Resolution with puredns
+        if self._should_run_tool('puredns') and all_subdomains:
+            logger.info("[*] Step 2/4: DNS Resolution")
+            puredns = Puredns(self.config)
+            resolved_output = stage_dir / 'resolved_subdomains.txt'
+            
+            puredns_results = puredns.run(all_subdomains_file, resolved_output)
+            results['puredns'] = puredns_results
+            logger.info("")
+        else:
+            # If puredns skipped, copy all subdomains as "resolved"
+            resolved_output = stage_dir / 'resolved_subdomains.txt'
+            if all_subdomains:
+                with open(resolved_output, 'w') as f:
+                    for subdomain in sorted(all_subdomains):
+                        f.write(f"{subdomain}\n")
+        
+        # Step 3: DNS Enrichment with dnsx
+        if self._should_run_tool('dnsx') and resolved_output.exists():
+            logger.info("[*] Step 3/4: DNS Enrichment")
+            dnsx = Dnsx(self.config)
+            dnsx_output = stage_dir / 'dnsx_output.txt'
+            
+            dnsx_results = dnsx.run(resolved_output, dnsx_output)
+            results['dnsx'] = dnsx_results
+            logger.info("")
+        
+        # Step 4: Comprehensive DNS Enumeration with dnsrecon
+        if self._should_run_tool('dnsrecon'):
+            logger.info("[*] Step 4/4: DNS Enumeration")
+            dnsrecon = Dnsrecon(self.config)
+            dnsrecon_output = stage_dir / 'dnsrecon_output.json'
+            
+            dnsrecon_results = dnsrecon.run(self.target, dnsrecon_output)
+            results['dnsrecon'] = dnsrecon_results
+            logger.info("")
+        
+        # Final summary
+        resolved_count = 0
+        if resolved_output.exists():
+            with open(resolved_output, 'r') as f:
+                resolved_count = len([line for line in f if line.strip()])
         
         results['total_subdomains'] = len(all_subdomains)
-        results['subdomains_file'] = str(combined_file)
+        results['resolved_subdomains'] = resolved_count
+        results['subdomains_file'] = str(all_subdomains_file)
+        results['resolved_file'] = str(resolved_output)
         results['stage_dir'] = str(stage_dir)
+        
+        logger.info("="*60)
+        logger.info(f"[✓] Discovery Summary:")
+        logger.info(f"    • Total subdomains found: {len(all_subdomains)}")
+        logger.info(f"    • Resolved subdomains: {resolved_count}")
+        logger.info(f"    • Output directory: {stage_dir}")
+        logger.info("="*60)
         
         return results
     
