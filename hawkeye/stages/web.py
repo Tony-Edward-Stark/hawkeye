@@ -54,9 +54,34 @@ class WebStage:
             results['httpx'] = httpx_results
             logger.info("")
         
+        # Fallback: Create URLs from open web ports if httpx found nothing
+        if not live_urls_file.exists() or live_urls_file.stat().st_size == 0:
+            logger.info("[*] Creating URLs from open ports (httpx fallback)...")
+            scanning_dir = Path(output_dir) / '02-scanning'
+            naabu_file = scanning_dir / 'naabu_output.txt'
+            
+            if naabu_file.exists():
+                live_urls = set()
+                with open(naabu_file, 'r') as f:
+                    for line in f:
+                        if ':80' in line or ':443' in line or ':8080' in line or ':8443' in line:
+                            parts = line.strip().split(':')
+                            if len(parts) == 2:
+                                host, port = parts
+                                if port == '443' or port == '8443':
+                                    live_urls.add(f'https://{host}')
+                                else:
+                                    live_urls.add(f'http://{host}')
+                
+                if live_urls:
+                    with open(live_urls_file, 'w') as f:
+                        for url in sorted(live_urls):
+                            f.write(f"{url}\n")
+                    logger.info(f"[✓] Created {len(live_urls)} URLs from open ports")
+        
         # Check if we have live URLs to crawl
         if not live_urls_file.exists() or live_urls_file.stat().st_size == 0:
-            logger.warning("[!] No live web applications found")
+            logger.warning("[!] No web applications found")
             return {
                 'status': 'completed',
                 'live_apps': 0,
@@ -68,13 +93,19 @@ class WebStage:
         with open(live_urls_file, 'r') as f:
             live_apps = len([line for line in f if line.strip()])
         
-        logger.info(f"[*] Found {live_apps} live web applications")
+        logger.info(f"[*] Found {live_apps} web applications to scan")
         logger.info("")
         
         all_urls = set()
         
-        # Step 2: Active Crawling with Katana
-        if self._should_run_tool('katana'):
+        # Add the base URLs
+        with open(live_urls_file, 'r') as f:
+            for line in f:
+                if line.strip():
+                    all_urls.add(line.strip())
+        
+        # Step 2: Active Crawling with Katana (skip if too many URLs or quick mode)
+        if self._should_run_tool('katana') and live_apps <= 10 and not self.config.get('quick_mode'):
             logger.info("[*] Step 2/4: Active Crawling (Katana)")
             katana = Katana(self.config)
             katana_output = stage_dir / 'katana_output.txt'
@@ -86,19 +117,22 @@ class WebStage:
                 all_urls.update(katana_results.get('urls', []))
             
             logger.info("")
+        else:
+            if live_apps > 10:
+                logger.info("[*] Skipping katana (too many targets)")
+            results['katana'] = {'status': 'skipped', 'reason': 'too_many_targets'}
         
-        # Step 3: Archive Mining with GAU
-        if self._should_run_tool('gau'):
+        # Step 3: Archive Mining with GAU (limit domains)
+        if self._should_run_tool('gau') and not self.config.get('quick_mode'):
             logger.info("[*] Step 3/4: Archive Mining (GAU)")
             
-            # Read domains from subdomains file
             with open(subdomains_file, 'r') as f:
-                domains = [line.strip() for line in f if line.strip()]
+                domains = [line.strip() for line in f if line.strip()][:5]  # Limit to 5
             
             gau = Gau(self.config)
             gau_output = stage_dir / 'gau_output.txt'
             
-            gau_results = gau.run(domains[:10], gau_output)  # Limit to 10 domains for speed
+            gau_results = gau.run(domains, gau_output)
             results['gau'] = gau_results
             
             if gau_results.get('status') == 'success':
@@ -106,19 +140,8 @@ class WebStage:
             
             logger.info("")
         
-        # Step 4: Deep Crawling with Gospider
-        if self._should_run_tool('gospider'):
-            logger.info("[*] Step 4/4: Deep Crawling (Gospider)")
-            gospider = Gospider(self.config)
-            gospider_output = stage_dir / 'gospider_output.txt'
-            
-            gospider_results = gospider.run(live_urls_file, gospider_output)
-            results['gospider'] = gospider_results
-            
-            if gospider_results.get('status') == 'success':
-                all_urls.update(gospider_results.get('urls', []))
-            
-            logger.info("")
+        # Step 4: Skip gospider (often problematic)
+        results['gospider'] = {'status': 'skipped', 'reason': 'unstable'}
         
         # Save combined URLs
         combined_urls_file = stage_dir / 'all_urls.txt'
@@ -126,8 +149,6 @@ class WebStage:
             with open(combined_urls_file, 'w') as f:
                 for url in sorted(all_urls):
                     f.write(f"{url}\n")
-            
-            logger.info(f"[*] Total unique URLs collected: {len(all_urls)}")
         else:
             combined_urls_file.touch()
         
@@ -138,8 +159,8 @@ class WebStage:
         
         logger.info("="*60)
         logger.info(f"[✓] Web Discovery Summary:")
-        logger.info(f"    • Live web applications: {live_apps}")
-        logger.info(f"    • Total URLs collected: {len(all_urls)}")
+        logger.info(f"    • Web applications: {live_apps}")
+        logger.info(f"    • Total URLs: {len(all_urls)}")
         logger.info(f"    • Output directory: {stage_dir}")
         logger.info("="*60)
         
