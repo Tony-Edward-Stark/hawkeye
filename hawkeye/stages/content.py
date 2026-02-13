@@ -1,3 +1,4 @@
+
 """Stage 4: Content Discovery"""
 
 from pathlib import Path
@@ -38,9 +39,13 @@ class ContentStage:
                 'stage_dir': str(stage_dir)
             }
         
-        # Count web apps
+        # Read web apps
+        web_apps = []
         with open(web_urls_file, 'r') as f:
-            web_apps = [line.strip() for line in f if line.strip() and line.strip().startswith('http')]
+            for line in f:
+                line = line.strip()
+                if line and (line.startswith('http://') or line.startswith('https://')):
+                    web_apps.append(line)
         
         if not web_apps:
             logger.warning("[!] No valid web applications to scan")

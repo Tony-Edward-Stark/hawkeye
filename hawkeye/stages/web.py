@@ -5,7 +5,6 @@ from pathlib import Path
 from hawkeye.tools.httpx import Httpx
 from hawkeye.tools.katana import Katana
 from hawkeye.tools.gau import Gau
-from hawkeye.tools.gospider import Gospider
 from hawkeye.ui.logger import get_logger
 
 logger = get_logger()
@@ -54,33 +53,46 @@ class WebStage:
             results['httpx'] = httpx_results
             logger.info("")
         
-        # Fallback: Create URLs from open web ports if httpx found nothing
-        if not live_urls_file.exists() or live_urls_file.stat().st_size == 0:
-            logger.info("[*] Creating URLs from open ports (httpx fallback)...")
+        # Read live URLs (from httpx or fallback)
+        live_urls = []
+        if live_urls_file.exists():
+            with open(live_urls_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and (line.startswith('http://') or line.startswith('https://')):
+                        live_urls.append(line)
+        
+        # Fallback: Create URLs from open ports if we have none
+        if not live_urls:
+            logger.info("[*] Creating URLs from open ports...")
             scanning_dir = Path(output_dir) / '02-scanning'
             naabu_file = scanning_dir / 'naabu_output.txt'
             
             if naabu_file.exists():
-                live_urls = set()
+                created_urls = set()
                 with open(naabu_file, 'r') as f:
                     for line in f:
+                        line = line.strip()
                         if ':80' in line or ':443' in line or ':8080' in line or ':8443' in line:
-                            parts = line.strip().split(':')
-                            if len(parts) == 2:
-                                host, port = parts
-                                if port == '443' or port == '8443':
-                                    live_urls.add(f'https://{host}')
-                                else:
-                                    live_urls.add(f'http://{host}')
+                            parts = line.split(':')
+                            if len(parts) >= 2:
+                                host = parts[0]
+                                port = parts[-1]
+                                
+                                if port in ['443', '8443']:
+                                    created_urls.add(f'https://{host}')
+                                elif port in ['80', '8080']:
+                                    created_urls.add(f'http://{host}')
                 
-                if live_urls:
+                if created_urls:
+                    live_urls = sorted(created_urls)
                     with open(live_urls_file, 'w') as f:
-                        for url in sorted(live_urls):
+                        for url in live_urls:
                             f.write(f"{url}\n")
                     logger.info(f"[✓] Created {len(live_urls)} URLs from open ports")
         
-        # Check if we have live URLs to crawl
-        if not live_urls_file.exists() or live_urls_file.stat().st_size == 0:
+        # Check if we have URLs
+        if not live_urls:
             logger.warning("[!] No web applications found")
             return {
                 'status': 'completed',
@@ -89,22 +101,14 @@ class WebStage:
                 'stage_dir': str(stage_dir)
             }
         
-        # Count live apps
-        with open(live_urls_file, 'r') as f:
-            live_apps = len([line for line in f if line.strip()])
-        
+        live_apps = len(live_urls)
         logger.info(f"[*] Found {live_apps} web applications to scan")
         logger.info("")
         
-        all_urls = set()
+        # Start with base URLs
+        all_urls = set(live_urls)
         
-        # Add the base URLs
-        with open(live_urls_file, 'r') as f:
-            for line in f:
-                if line.strip():
-                    all_urls.add(line.strip())
-        
-        # Step 2: Active Crawling with Katana (skip if too many URLs or quick mode)
+        # Step 2: Active Crawling with Katana
         if self._should_run_tool('katana') and live_apps <= 10 and not self.config.get('quick_mode'):
             logger.info("[*] Step 2/4: Active Crawling (Katana)")
             katana = Katana(self.config)
@@ -114,43 +118,45 @@ class WebStage:
             results['katana'] = katana_results
             
             if katana_results.get('status') == 'success':
-                all_urls.update(katana_results.get('urls', []))
+                katana_urls = katana_results.get('urls', [])
+                all_urls.update(katana_urls)
+                logger.info(f"[*] Katana added {len(katana_urls)} URLs")
             
             logger.info("")
         else:
             if live_apps > 10:
                 logger.info("[*] Skipping katana (too many targets)")
-            results['katana'] = {'status': 'skipped', 'reason': 'too_many_targets'}
+            results['katana'] = {'status': 'skipped', 'reason': 'too_many_or_quick'}
         
-        # Step 3: Archive Mining with GAU (limit domains)
+        # Step 3: Archive Mining with GAU
         if self._should_run_tool('gau') and not self.config.get('quick_mode'):
             logger.info("[*] Step 3/4: Archive Mining (GAU)")
             
             with open(subdomains_file, 'r') as f:
-                domains = [line.strip() for line in f if line.strip()][:5]  # Limit to 5
+                domains = [line.strip() for line in f if line.strip()][:5]
             
-            gau = Gau(self.config)
-            gau_output = stage_dir / 'gau_output.txt'
-            
-            gau_results = gau.run(domains, gau_output)
-            results['gau'] = gau_results
-            
-            if gau_results.get('status') == 'success':
-                all_urls.update(gau_results.get('urls', []))
+            if domains:
+                gau = Gau(self.config)
+                gau_output = stage_dir / 'gau_output.txt'
+                
+                gau_results = gau.run(domains, gau_output)
+                results['gau'] = gau_results
+                
+                if gau_results.get('status') == 'success':
+                    gau_urls = gau_results.get('urls', [])
+                    all_urls.update(gau_urls)
+                    logger.info(f"[*] GAU added {len(gau_urls)} URLs")
             
             logger.info("")
         
-        # Step 4: Skip gospider (often problematic)
+        # Skip gospider
         results['gospider'] = {'status': 'skipped', 'reason': 'unstable'}
         
         # Save combined URLs
         combined_urls_file = stage_dir / 'all_urls.txt'
-        if all_urls:
-            with open(combined_urls_file, 'w') as f:
-                for url in sorted(all_urls):
-                    f.write(f"{url}\n")
-        else:
-            combined_urls_file.touch()
+        with open(combined_urls_file, 'w') as f:
+            for url in sorted(all_urls):
+                f.write(f"{url}\n")
         
         results['live_apps'] = live_apps
         results['total_urls'] = len(all_urls)
@@ -173,3 +179,4 @@ class WebStage:
         if tool_name in self.skip_tools:
             return False
         return True
+
