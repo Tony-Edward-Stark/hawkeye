@@ -13,6 +13,8 @@ class ToolRunner:
     
     def __init__(self, config):
         self.config = config
+        # Tools that use exit code 2 for "no results" (not errors)
+        self.exit_code_2_ok = ['nuclei', 'httpx', 'feroxbuster']
     
     def run_command(self, command, output_file=None, tool_name="", shell=False):
         """
@@ -58,18 +60,24 @@ class ToolRunner:
                 stdout, stderr = process.communicate()
             
             # Check result
-            if process.returncode != 0:
-                logger.warning(f"[!] {tool_name} exited with code {process.returncode}")
-                if stderr:
-                    logger.debug(f"Error: {stderr[:500]}")
-                return False
-            else:
+            # Exit code 2 is OK for some tools (means "no results found")
+            base_tool_name = tool_name.split()[0].split('(')[0].strip()
+            
+            if process.returncode == 0:
                 logger.info(f"[✓] {tool_name} completed successfully")
                 return True
+            elif process.returncode == 2 and base_tool_name in self.exit_code_2_ok:
+                logger.info(f"[✓] {tool_name} completed (no results)")
+                return True
+            else:
+                logger.warning(f"[!] {tool_name} exited with code {process.returncode}")
+                if stderr and len(stderr) < 200:
+                    logger.debug(f"Error: {stderr}")
+                return False
             
         except FileNotFoundError:
             logger.error(f"[!] Tool not found: {tool_name}")
-            logger.info(f"[*] Install it with: go install <package>")
+            logger.info(f"[*] Install it or check PATH")
             return False
         except Exception as e:
             logger.error(f"[!] Error running {tool_name}: {e}")

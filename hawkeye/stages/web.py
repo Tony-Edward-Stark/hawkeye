@@ -27,7 +27,7 @@ class WebStage:
         logger.info(f"[*] Output: {stage_dir}")
         logger.info("")
         
-        # Get subdomains from discovery stage
+        # Get subdomains
         discovery_dir = Path(output_dir) / '01-discovery'
         subdomains_file = discovery_dir / 'resolved_subdomains.txt'
         
@@ -35,12 +35,8 @@ class WebStage:
             subdomains_file = discovery_dir / 'all_subdomains.txt'
         
         if not subdomains_file.exists():
-            logger.warning("[!] No subdomains found from discovery stage")
-            return {
-                'status': 'skipped',
-                'reason': 'no_input',
-                'stage_dir': str(stage_dir)
-            }
+            logger.warning("[!] No subdomains found")
+            return {'status': 'skipped', 'reason': 'no_input', 'stage_dir': str(stage_dir)}
         
         # Step 1: HTTP Probing
         live_urls_file = stage_dir / 'httpx_output.txt'
@@ -48,12 +44,11 @@ class WebStage:
         if self._should_run_tool('httpx'):
             logger.info("[*] Step 1/4: HTTP Probing")
             httpx = Httpx(self.config)
-            
             httpx_results = httpx.run(subdomains_file, live_urls_file)
             results['httpx'] = httpx_results
             logger.info("")
         
-        # Read live URLs (from httpx or fallback)
+        # Read live URLs
         live_urls = []
         if live_urls_file.exists():
             with open(live_urls_file, 'r') as f:
@@ -62,54 +57,52 @@ class WebStage:
                     if line and (line.startswith('http://') or line.startswith('https://')):
                         live_urls.append(line)
         
-        # Fallback: Create URLs from open ports if we have none
+        # Fallback: Create from open ports
         if not live_urls:
             logger.info("[*] Creating URLs from open ports...")
             scanning_dir = Path(output_dir) / '02-scanning'
             naabu_file = scanning_dir / 'naabu_output.txt'
             
             if naabu_file.exists():
-                created_urls = set()
+                created = set()
                 with open(naabu_file, 'r') as f:
                     for line in f:
-                        line = line.strip()
                         if ':80' in line or ':443' in line or ':8080' in line or ':8443' in line:
-                            parts = line.split(':')
+                            parts = line.strip().split(':')
                             if len(parts) >= 2:
                                 host = parts[0]
                                 port = parts[-1]
-                                
                                 if port in ['443', '8443']:
-                                    created_urls.add(f'https://{host}')
+                                    created.add(f'https://{host}')
                                 elif port in ['80', '8080']:
-                                    created_urls.add(f'http://{host}')
+                                    created.add(f'http://{host}')
                 
-                if created_urls:
-                    live_urls = sorted(created_urls)
+                if created:
+                    live_urls = sorted(created)
                     with open(live_urls_file, 'w') as f:
                         for url in live_urls:
                             f.write(f"{url}\n")
                     logger.info(f"[✓] Created {len(live_urls)} URLs from open ports")
         
-        # Check if we have URLs
         if not live_urls:
             logger.warning("[!] No web applications found")
-            return {
-                'status': 'completed',
-                'live_apps': 0,
-                'total_urls': 0,
-                'stage_dir': str(stage_dir)
-            }
+            return {'status': 'completed', 'live_apps': 0, 'total_urls': 0, 'stage_dir': str(stage_dir)}
         
-        live_apps = len(live_urls)
-        logger.info(f"[*] Found {live_apps} web applications to scan")
+        # Count unique web applications (unique hosts)
+        unique_hosts = set()
+        for url in live_urls:
+            # Extract host from URL
+            host = url.split('//')[1].split('/')[0].split(':')[0]
+            unique_hosts.add(host)
+        
+        web_apps_count = len(unique_hosts)
+        logger.info(f"[*] Found {len(live_urls)} URLs from {web_apps_count} web applications")
         logger.info("")
         
-        # Start with base URLs
         all_urls = set(live_urls)
         
-        # Step 2: Active Crawling with Katana
-        if self._should_run_tool('katana') and live_apps <= 10 and not self.config.get('quick_mode'):
+        # Step 2: Katana - based on NUMBER OF WEB APPS, not URLs
+        if self._should_run_tool('katana') and web_apps_count <= 20 and not self.config.get('quick_mode'):
             logger.info("[*] Step 2/4: Active Crawling (Katana)")
             katana = Katana(self.config)
             katana_output = stage_dir / 'katana_output.txt'
@@ -124,21 +117,20 @@ class WebStage:
             
             logger.info("")
         else:
-            if live_apps > 10:
-                logger.info("[*] Skipping katana (too many targets)")
-            results['katana'] = {'status': 'skipped', 'reason': 'too_many_or_quick'}
+            if web_apps_count > 20:
+                logger.info(f"[*] Skipping katana ({web_apps_count} web apps > 20 limit)")
+            results['katana'] = {'status': 'skipped', 'reason': 'too_many_apps'}
         
-        # Step 3: Archive Mining with GAU
+        # Step 3: GAU
         if self._should_run_tool('gau') and not self.config.get('quick_mode'):
             logger.info("[*] Step 3/4: Archive Mining (GAU)")
             
             with open(subdomains_file, 'r') as f:
-                domains = [line.strip() for line in f if line.strip()][:5]
+                domains = [line.strip() for line in f if line.strip()][:10]
             
             if domains:
                 gau = Gau(self.config)
                 gau_output = stage_dir / 'gau_output.txt'
-                
                 gau_results = gau.run(domains, gau_output)
                 results['gau'] = gau_results
                 
@@ -149,7 +141,6 @@ class WebStage:
             
             logger.info("")
         
-        # Skip gospider
         results['gospider'] = {'status': 'skipped', 'reason': 'unstable'}
         
         # Save combined URLs
@@ -158,14 +149,14 @@ class WebStage:
             for url in sorted(all_urls):
                 f.write(f"{url}\n")
         
-        results['live_apps'] = live_apps
+        results['live_apps'] = web_apps_count
         results['total_urls'] = len(all_urls)
         results['urls_file'] = str(combined_urls_file)
         results['stage_dir'] = str(stage_dir)
         
         logger.info("="*60)
         logger.info(f"[✓] Web Discovery Summary:")
-        logger.info(f"    • Web applications: {live_apps}")
+        logger.info(f"    • Web applications: {web_apps_count}")
         logger.info(f"    • Total URLs: {len(all_urls)}")
         logger.info(f"    • Output directory: {stage_dir}")
         logger.info("="*60)
