@@ -1,3 +1,4 @@
+
 """Puredns tool wrapper"""
 
 from pathlib import Path
@@ -27,23 +28,39 @@ class Puredns:
         """
         # Check if tool is installed
         if not self.runner.check_tool_installed(self.tool_name):
-            logger.error(f"[!] {self.tool_name} is not installed")
+            logger.warning(f"[!] {self.tool_name} is not installed")
             logger.info("[*] Install: go install github.com/d3mondev/puredns/v2@latest")
-            return {'status': 'failed', 'reason': 'tool_not_found'}
+            logger.info("[*] Using all subdomains without resolution")
+            
+            # Copy all subdomains as fallback
+            with open(input_file, 'r') as fin, open(output_file, 'w') as fout:
+                fout.write(fin.read())
+            
+            with open(output_file, 'r') as f:
+                resolved = [line.strip() for line in f if line.strip()]
+            
+            return {
+                'status': 'skipped',
+                'resolved_domains': resolved,
+                'count': len(resolved),
+                'output_file': str(output_file)
+            }
         
         # Check if input file exists
         if not Path(input_file).exists():
             logger.warning(f"[!] Input file not found: {input_file}")
             return {'status': 'failed', 'reason': 'no_input'}
         
-        # Create resolver file (Google DNS as fallback)
+        # Create resolver file
         resolver_file = Path(output_file).parent / 'resolvers.txt'
         if not resolver_file.exists():
             with open(resolver_file, 'w') as f:
+                # Use multiple public DNS servers
                 f.write("8.8.8.8\n")
                 f.write("8.8.4.4\n")
                 f.write("1.1.1.1\n")
                 f.write("1.0.0.1\n")
+                f.write("9.9.9.9\n")
         
         # Build command
         command = [
@@ -51,7 +68,8 @@ class Puredns:
             'resolve',
             str(input_file),
             '-r', str(resolver_file),
-            '-w', str(output_file)
+            '-w', str(output_file),
+            '--skip-wildcard-filter'
         ]
         
         # Run the tool
@@ -62,33 +80,32 @@ class Puredns:
         )
         
         # Parse results
-        if success and Path(output_file).exists():
+        if success and Path(output_file).exists() and output_file.stat().st_size > 0:
             with open(output_file, 'r') as f:
                 resolved = [line.strip() for line in f if line.strip()]
             
-            logger.info(f"[✓] Resolved {len(resolved)} subdomains")
-            
-            return {
-                'status': 'success',
-                'resolved_domains': resolved,
-                'count': len(resolved),
-                'output_file': str(output_file)
-            }
-        else:
-            logger.warning(f"[!] puredns failed or returned no results")
-            # Copy all subdomains as fallback
-            logger.info(f"[*] Using all subdomains as fallback")
-            with open(input_file, 'r') as fin, open(output_file, 'w') as fout:
-                fout.write(fin.read())
-            
-            with open(output_file, 'r') as f:
-                resolved = [line.strip() for line in f if line.strip()]
-            
-            return {
-                'status': 'partial',
-                'resolved_domains': resolved,
-                'count': len(resolved),
-                'output_file': str(output_file)
-            }
-
+            if resolved:
+                logger.info(f"[✓] Resolved {len(resolved)} subdomains")
+                
+                return {
+                    'status': 'success',
+                    'resolved_domains': resolved,
+                    'count': len(resolved),
+                    'output_file': str(output_file)
+                }
+        
+        # Fallback: Copy all subdomains
+        logger.warning(f"[!] puredns failed, using all subdomains as fallback")
+        with open(input_file, 'r') as fin, open(output_file, 'w') as fout:
+            fout.write(fin.read())
+        
+        with open(output_file, 'r') as f:
+            resolved = [line.strip() for line in f if line.strip()]
+        
+        return {
+            'status': 'partial',
+            'resolved_domains': resolved,
+            'count': len(resolved),
+            'output_file': str(output_file)
+        }
 

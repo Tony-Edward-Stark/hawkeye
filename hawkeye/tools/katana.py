@@ -37,58 +37,77 @@ class Katana:
             logger.warning(f"[!] Input file not found: {input_file}")
             return {'status': 'failed', 'reason': 'no_input'}
         
+        # Count URLs
+        with open(input_file, 'r') as f:
+            urls_to_crawl = [line.strip() for line in f if line.strip() and line.strip().startswith('http')]
+        
+        if not urls_to_crawl:
+            logger.warning("[!] No valid URLs to crawl")
+            return {'status': 'failed', 'reason': 'no_urls'}
+        
         # Build command
         command = [
             self.tool_name,
             '-list', str(input_file),
             '-o', str(output_file),
-            '-silent',
+            '-d', '3',  # Depth
             '-jc',  # JavaScript crawling
             '-kf', 'all',  # Known files
-            '-d', '3'  # Depth
+            '-ef', 'css,png,jpg,jpeg,gif,svg,ico,woff,woff2',  # Exclude common static files
+            '-timeout', '10'
         ]
         
         # Adjust depth for quick/deep mode
         if self.config.get('quick_mode'):
-            command[-1] = '2'  # Shallow crawl
+            command[command.index('-d') + 1] = '2'
         elif self.config.get('deep_mode'):
-            command[-1] = '5'  # Deep crawl
+            command[command.index('-d') + 1] = '4'
         
         # Add rate limiting
         rate_limit = self.config.get('rate_limit', 150)
         command.extend(['-rl', str(rate_limit)])
         
-        # Add concurrency
-        threads = self.config.get('threads', 50)
+        # Add concurrency (lower for stability)
+        threads = min(self.config.get('threads', 50), 20)
         command.extend(['-c', str(threads)])
         
         # Run the tool
-        logger.info(f"[*] Crawling web applications with katana...")
+        logger.info(f"[*] Crawling {len(urls_to_crawl)} web applications...")
         success = self.runner.run_command(
             command,
             tool_name=self.tool_name
         )
         
         # Parse results
-        if success and Path(output_file).exists():
-            urls = []
+        if Path(output_file).exists() and output_file.stat().st_size > 0:
+            urls = set()
             with open(output_file, 'r') as f:
                 for line in f:
-                    if line.strip():
-                        urls.append(line.strip())
+                    line = line.strip()
+                    if line and line.startswith('http'):
+                        urls.add(line)
             
-            logger.info(f"[✓] Crawled {len(urls)} URLs")
-            
-            return {
-                'status': 'success',
-                'urls': urls,
-                'count': len(urls),
-                'output_file': str(output_file)
-            }
-        else:
-            logger.warning(f"[!] katana failed or returned no results")
-            return {
-                'status': 'failed',
-                'urls': [],
-                'count': 0
-            }
+            if urls:
+                logger.info(f"[✓] Crawled {len(urls)} unique URLs")
+                
+                return {
+                    'status': 'success',
+                    'urls': list(urls),
+                    'count': len(urls),
+                    'output_file': str(output_file)
+                }
+        
+        # If katana found nothing, at least return the input URLs
+        logger.warning(f"[!] Katana found no new URLs")
+        
+        with open(output_file, 'w') as f:
+            for url in urls_to_crawl:
+                f.write(f"{url}\n")
+        
+        return {
+            'status': 'completed',
+            'urls': urls_to_crawl,
+            'count': len(urls_to_crawl),
+            'output_file': str(output_file)
+        }
+
