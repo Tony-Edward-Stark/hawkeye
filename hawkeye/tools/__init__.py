@@ -13,6 +13,9 @@ from hawkeye.tools.gau import Gau
 from hawkeye.tools.gospider import Gospider
 from hawkeye.tools.ffuf import Ffuf
 from hawkeye.tools.feroxbuster import Feroxbuster
+from hawkeye.tools.nuclei import Nuclei
+from hawkeye.tools.enum4linux_ng import Enum4linuxNg
+from hawkeye.tools.gf import Gf
 
 __all__ = [
     'Subfinder',
@@ -26,5 +29,8 @@ __all__ = [
     'Gau',
     'Gospider',
     'Ffuf',
-    'Feroxbuster'
+    'Feroxbuster',
+    'Nuclei',
+    'Enum4linuxNg',
+    'Gf'
 ]
