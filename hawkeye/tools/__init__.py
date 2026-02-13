@@ -11,6 +11,8 @@ from hawkeye.tools.httpx import Httpx
 from hawkeye.tools.katana import Katana
 from hawkeye.tools.gau import Gau
 from hawkeye.tools.gospider import Gospider
+from hawkeye.tools.ffuf import Ffuf
+from hawkeye.tools.feroxbuster import Feroxbuster
 
 __all__ = [
     'Subfinder',
@@ -22,5 +24,7 @@ __all__ = [
     'Httpx',
     'Katana',
     'Gau',
-    'Gospider'
+    'Gospider',
+    'Ffuf',
+    'Feroxbuster'
 ]
