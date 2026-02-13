@@ -1,7 +1,4 @@
 
-
-
-
 """Stage 1: Subdomain Discovery"""
 
 from pathlib import Path
@@ -61,24 +58,24 @@ class DiscoveryStage:
             logger.warning("[!] No subdomains discovered")
         
         # Step 2: DNS Resolution with puredns
+        resolved_output = stage_dir / 'resolved_subdomains.txt'
+        
         if self._should_run_tool('puredns') and all_subdomains:
             logger.info("[*] Step 2/4: DNS Resolution")
             puredns = Puredns(self.config)
-            resolved_output = stage_dir / 'resolved_subdomains.txt'
             
             puredns_results = puredns.run(all_subdomains_file, resolved_output)
             results['puredns'] = puredns_results
             logger.info("")
         else:
             # If puredns skipped, copy all subdomains as "resolved"
-            resolved_output = stage_dir / 'resolved_subdomains.txt'
             if all_subdomains:
                 with open(resolved_output, 'w') as f:
                     for subdomain in sorted(all_subdomains):
                         f.write(f"{subdomain}\n")
         
         # Step 3: DNS Enrichment with dnsx
-        if self._should_run_tool('dnsx') and resolved_output.exists():
+        if self._should_run_tool('dnsx') and resolved_output.exists() and resolved_output.stat().st_size > 0:
             logger.info("[*] Step 3/4: DNS Enrichment")
             dnsx = Dnsx(self.config)
             dnsx_output = stage_dir / 'dnsx_output.txt'
@@ -125,4 +122,3 @@ class DiscoveryStage:
         if tool_name in self.skip_tools:
             return False
         return True
-

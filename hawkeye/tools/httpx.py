@@ -1,3 +1,4 @@
+
 """Httpx tool wrapper"""
 
 from pathlib import Path
@@ -36,18 +37,25 @@ class Httpx:
             logger.warning(f"[!] Input file not found: {input_file}")
             return {'status': 'failed', 'reason': 'no_input'}
         
+        # Check if input has content
+        with open(input_file, 'r') as f:
+            hosts = [line.strip() for line in f if line.strip()]
+        
+        if not hosts:
+            logger.warning("[!] No hosts to probe")
+            return {'status': 'failed', 'reason': 'no_hosts'}
+        
         # Build command
         command = [
             self.tool_name,
             '-l', str(input_file),
             '-o', str(output_file),
-            '-silent',
-            '-status-code',  # Show status codes
-            '-tech-detect',  # Detect technologies
-            '-title',  # Get page titles
-            '-web-server',  # Show web server
+            '-status-code',
+            '-title',
+            '-tech-detect',
             '-follow-redirects',
-            '-random-agent'
+            '-random-agent',
+            '-timeout', '10'
         ]
         
         # Add rate limiting
@@ -59,33 +67,37 @@ class Httpx:
         command.extend(['-threads', str(threads)])
         
         # Run the tool
-        logger.info(f"[*] Probing for live web applications with httpx...")
+        logger.info(f"[*] Probing {len(hosts)} hosts for live web applications...")
         success = self.runner.run_command(
             command,
             tool_name=self.tool_name
         )
         
         # Parse results
-        if success and Path(output_file).exists():
+        if Path(output_file).exists() and output_file.stat().st_size > 0:
             live_urls = []
             with open(output_file, 'r') as f:
                 for line in f:
-                    if line.strip():
-                        live_urls.append(line.strip())
+                    if line.strip() and line.strip().startswith('http'):
+                        # Extract just the URL part (before status code)
+                        url = line.strip().split()[0]
+                        live_urls.append(url)
             
-            logger.info(f"[✓] Found {len(live_urls)} live web applications")
-            
-            return {
-                'status': 'success',
-                'live_urls': live_urls,
-                'count': len(live_urls),
-                'output_file': str(output_file)
-            }
-        else:
-            logger.warning(f"[!] httpx failed or returned no results")
-            return {
-                'status': 'failed',
-                'live_urls': [],
-                'count': 0
-            }
+            if live_urls:
+                logger.info(f"[✓] Found {len(live_urls)} live web applications")
+                
+                return {
+                    'status': 'success',
+                    'live_urls': live_urls,
+                    'count': len(live_urls),
+                    'output_file': str(output_file)
+                }
+        
+        logger.warning(f"[!] No live web applications found")
+        Path(output_file).touch()
+        return {
+            'status': 'completed',
+            'live_urls': [],
+            'count': 0
+        }
 

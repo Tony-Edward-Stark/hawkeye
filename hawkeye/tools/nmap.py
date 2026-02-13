@@ -39,48 +39,50 @@ class Nmap:
         
         # Build command
         command = [
-            'sudo',  # nmap often needs sudo for SYN scan
+            'sudo',
             self.tool_name,
-            '-iL', str(input_file),  # Input list
+            '-iL', str(input_file),
             '-sV',  # Service version detection
-            '-sC',  # Default scripts
             '-T4',  # Timing template (aggressive)
-            '-oX', str(output_file),  # XML output
-            '-oN', str(output_file).replace('.xml', '.txt')  # Also text output
+            '-oX', str(output_file),
+            '-oN', str(output_file).replace('.xml', '.txt')
         ]
         
-        # Add UDP scan if enabled (slow!)
+        # Add UDP scan ONLY if explicitly enabled
         if self.config.get('udp_scan'):
             command.insert(2, '-sU')
-            logger.warning("[!] UDP scan enabled - this will be SLOW")
+            logger.warning("[!] UDP scan enabled - this will be VERY SLOW")
         
         # Stealth mode
         if self.config.get('stealth'):
             command.extend(['-T2', '--max-rate', '50'])
             logger.info("[*] Stealth mode enabled")
         
-        # NSE scripts for comprehensive scanning
+        # NSE scripts - only add vuln scripts in deep mode
         if self.config.get('deep_mode'):
             command.extend([
-                '--script', 'default,discovery,vuln,exploit,auth'
+                '-sC',  # Default scripts
+                '--script', 'vuln'  # Only vuln scripts, not exploit
             ])
-            logger.info("[*] Deep mode: Running comprehensive NSE scripts")
+            logger.info("[*] Deep mode: Running NSE vulnerability scripts")
+        else:
+            command.append('-sC')  # Just default scripts
         
         # Run the tool
         logger.info(f"[*] Running detailed service detection with nmap...")
-        logger.info(f"[*] This may take several minutes...")
+        logger.info(f"[*] This may take a few minutes...")
         
         success = self.runner.run_command(
             command,
             tool_name=self.tool_name
         )
         
-        # Parse results (basic parsing - XML parsing can be added later)
+        # Parse results
         if success and Path(output_file).exists():
             logger.info(f"[✓] Nmap scan completed")
             logger.info(f"[*] Results saved to: {output_file}")
             
-            # Try to count open ports from text output
+            # Count open ports from text output
             text_output = str(output_file).replace('.xml', '.txt')
             open_ports = 0
             if Path(text_output).exists():
