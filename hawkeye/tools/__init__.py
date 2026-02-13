@@ -7,6 +7,10 @@ from hawkeye.tools.dnsx import Dnsx
 from hawkeye.tools.dnsrecon import Dnsrecon
 from hawkeye.tools.naabu import Naabu
 from hawkeye.tools.nmap import Nmap
+from hawkeye.tools.httpx import Httpx
+from hawkeye.tools.katana import Katana
+from hawkeye.tools.gau import Gau
+from hawkeye.tools.gospider import Gospider
 
 __all__ = [
     'Subfinder',
@@ -14,5 +18,9 @@ __all__ = [
     'Dnsx',
     'Dnsrecon',
     'Naabu',
-    'Nmap'
+    'Nmap',
+    'Httpx',
+    'Katana',
+    'Gau',
+    'Gospider'
 ]
