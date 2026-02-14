@@ -48,28 +48,38 @@ class Naabu:
             '-silent'
         ]
         
-        # ✅ FIX: Add port range - scan ALL ports or top ports
+        # ✅ OPTIMIZED: Smart port selection based on mode
         if self.config.get('quick_mode'):
+            # Quick mode: top 100 ports only
             command.extend(['-top-ports', '100'])
             logger.info(f"[*] Quick mode: scanning top 100 ports on {len(hosts)} hosts")
-        else:
-            # ✅ CRITICAL FIX: Scan ALL 65535 ports (matches manual execution)
+        elif self.config.get('deep_mode'):
+            # Deep mode: all 65535 ports (VERY SLOW - 30+ minutes)
             command.extend(['-p', '-'])
-            logger.info(f"[*] Scanning ALL ports (1-65535) on {len(hosts)} hosts")
+            logger.info(f"[*] Deep mode: scanning ALL 65535 ports on {len(hosts)} hosts")
+            logger.warning("[!] This will take 30-60 minutes!")
+        else:
+            # ✅ DEFAULT (BALANCED): Top 1000 ports + common high ports
+            # This is much faster (~5 mins) and finds most ports
+            command.extend(['-top-ports', '1000'])
+            logger.info(f"[*] Scanning top 1000 ports on {len(hosts)} hosts")
         
-        # Add rate limiting
-        rate_limit = self.config.get('rate_limit', 1000)
+        # Add rate limiting (faster for balanced mode)
+        if self.config.get('deep_mode'):
+            rate_limit = self.config.get('rate_limit', 1000)
+        else:
+            rate_limit = self.config.get('rate_limit', 2000)  # Faster for top ports
         command.extend(['-rate', str(rate_limit)])
         
         # Add threads
         threads = self.config.get('threads', 50)
         command.extend(['-c', str(threads)])
         
-        # ✅ FIX: Add retries and timeout
+        # Add retries and timeout
         command.extend(['-retries', '2'])
-        command.extend(['-timeout', '10000'])
+        command.extend(['-timeout', '5000'])  # 5 seconds (faster)
         
-        # Run the tool (removed timeout parameter - not supported by ToolRunner)
+        # Run the tool
         logger.info(f"[*] Running fast port scan with naabu...")
         success = self.runner.run_command(
             command,
@@ -84,7 +94,14 @@ class Naabu:
                     if line.strip():
                         open_ports.append(line.strip())
             
-            logger.info(f"[✓] Naabu found {len(open_ports)} open ports across {len(hosts)} hosts")
+            # Count unique hosts
+            unique_hosts = set()
+            for port_line in open_ports:
+                if ':' in port_line:
+                    host = port_line.split(':')[0]
+                    unique_hosts.add(host)
+            
+            logger.info(f"[✓] Naabu found {len(open_ports)} open ports across {len(unique_hosts)} hosts")
             
             return {
                 'status': 'success',
