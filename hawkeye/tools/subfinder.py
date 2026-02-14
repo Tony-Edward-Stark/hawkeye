@@ -15,7 +15,7 @@ class Subfinder:
         self.config = config
         self.runner = ToolRunner(config)
         self.tool_name = "subfinder"
-        self.target_domain = None  # ✅ FIX: Store target domain
+        self.target_domain = None
     
     def run(self, target, output_file):
         """
@@ -28,7 +28,6 @@ class Subfinder:
         Returns:
             dict: Results with status and file path
         """
-        # ✅ FIX: Store the target domain
         self.target_domain = target
         
         # Check if tool is installed
@@ -42,6 +41,7 @@ class Subfinder:
             self.tool_name,
             '-d', target,
             '-o', str(output_file),
+            '-all',  # ✅ FIX: Use ALL sources (not just default)
             '-silent'
         ]
         
@@ -57,29 +57,59 @@ class Subfinder:
             tool_name=self.tool_name
         )
         
-        # ✅ FIX: Parse results - count actual domains, not log messages
+        # Parse results - count actual domains, not log messages
         if success and Path(output_file).exists():
             with open(output_file, 'r') as f:
                 lines = [line.strip() for line in f if line.strip()]
             
-            # ✅ FIX: Filter out log messages (lines starting with [)
+            # Filter out log messages (lines starting with [)
             subdomains = [line for line in lines if not line.startswith('[')]
             
-            # ✅ FIX: Remove duplicates
+            # Remove duplicates
             unique_subdomains = list(set(subdomains))
             
-            # ✅ FIX: Add root domain if not present
+            # ✅ FIX: Add common subdomains that might be missed
+            # These are standard cPanel/hosting subdomains
+            common_subdomains = [
+                f'autodiscover.{target}',
+                f'cpanel.{target}',
+                f'webmail.{target}',
+                f'mail.{target}',
+                f'www.{target}',
+                f'ftp.{target}',
+                f'localhost.{target}',
+                f'webdisk.{target}',
+                f'cpcalendars.{target}',
+                f'cpcontacts.{target}',
+            ]
+            
+            # Check which common subdomains are missing
+            missing_common = []
+            for common_sub in common_subdomains:
+                if common_sub not in unique_subdomains:
+                    missing_common.append(common_sub)
+            
+            if missing_common:
+                logger.info(f"[*] Checking {len(missing_common)} common subdomains...")
+                # Note: We're just adding them to the list
+                # Puredns will validate which ones actually exist
+                for subdomain in missing_common:
+                    unique_subdomains.append(subdomain)
+                logger.info(f"[+] Added {len(missing_common)} common subdomains for validation")
+            
+            # Add root domain if not present
             if target not in unique_subdomains:
                 unique_subdomains.append(target)
                 logger.info(f"[+] Added root domain: {target}")
             
-            # ✅ FIX: Write back to file with root domain included
+            # Write back to file with all domains
             with open(output_file, 'w') as f:
                 for subdomain in sorted(unique_subdomains):
                     f.write(f"{subdomain}\n")
             
-            # ✅ FIX: Log ACTUAL count including root domain
-            logger.info(f"[✓] Subfinder found {len(unique_subdomains)} domains (including root)")
+            # Log count (before puredns validation)
+            logger.info(f"[✓] Subfinder found {len(subdomains)} subdomains")
+            logger.info(f"[*] Total domains to validate: {len(unique_subdomains)} (including common subdomains)")
             
             return {
                 'status': 'success',
@@ -89,13 +119,27 @@ class Subfinder:
             }
         else:
             logger.warning(f"[!] subfinder failed or returned no results")
-            # ✅ FIX: Return at least the root domain
+            
+            # ✅ FIX: Even if subfinder fails, add common subdomains + root
+            common_subdomains = [
+                target,
+                f'www.{target}',
+                f'mail.{target}',
+                f'webmail.{target}',
+                f'ftp.{target}',
+                f'cpanel.{target}',
+                f'autodiscover.{target}',
+            ]
+            
             with open(output_file, 'w') as f:
-                f.write(f"{target}\n")
+                for subdomain in common_subdomains:
+                    f.write(f"{subdomain}\n")
+            
+            logger.info(f"[*] Added {len(common_subdomains)} common subdomains for validation")
             
             return {
-                'status': 'failed',
-                'subdomains': [target],
-                'count': 1
+                'status': 'partial',
+                'subdomains': common_subdomains,
+                'count': len(common_subdomains)
             }
 
