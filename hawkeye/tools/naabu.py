@@ -36,6 +36,10 @@ class Naabu:
             logger.warning(f"[!] Input file not found: {input_file}")
             return {'status': 'failed', 'reason': 'no_input'}
         
+        # Count hosts for logging
+        with open(input_file, 'r') as f:
+            hosts = [line.strip() for line in f if line.strip()]
+        
         # Build command
         command = [
             self.tool_name,
@@ -44,23 +48,33 @@ class Naabu:
             '-silent'
         ]
         
+        # ✅ FIX: Add port range - scan ALL ports or top ports
+        if self.config.get('quick_mode'):
+            command.extend(['-top-ports', '100'])
+            logger.info(f"[*] Quick mode: scanning top 100 ports on {len(hosts)} hosts")
+        else:
+            # ✅ CRITICAL FIX: Scan ALL 65535 ports (matches manual execution)
+            command.extend(['-p', '-'])
+            logger.info(f"[*] Scanning ALL ports (1-65535) on {len(hosts)} hosts")
+        
         # Add rate limiting
-        rate_limit = self.config.get('rate_limit', 150)
+        rate_limit = self.config.get('rate_limit', 1000)  # ✅ FIX: Increased default
         command.extend(['-rate', str(rate_limit)])
         
         # Add threads
         threads = self.config.get('threads', 50)
         command.extend(['-c', str(threads)])
         
-        # Top ports for quick mode
-        if self.config.get('quick_mode'):
-            command.extend(['-top-ports', '100'])
+        # ✅ FIX: Add retries and timeout
+        command.extend(['-retries', '2'])
+        command.extend(['-timeout', '10000'])  # 10 seconds per probe
         
-        # Run the tool
+        # Run the tool with longer timeout
         logger.info(f"[*] Running fast port scan with naabu...")
         success = self.runner.run_command(
             command,
-            tool_name=self.tool_name
+            tool_name=self.tool_name,
+            timeout=900  # ✅ FIX: 15 min timeout for all ports
         )
         
         # Parse results
@@ -71,7 +85,7 @@ class Naabu:
                     if line.strip():
                         open_ports.append(line.strip())
             
-            logger.info(f"[✓] Found {len(open_ports)} open ports")
+            logger.info(f"[✓] Naabu found {len(open_ports)} open ports across {len(hosts)} hosts")
             
             return {
                 'status': 'success',

@@ -15,6 +15,7 @@ class Subfinder:
         self.config = config
         self.runner = ToolRunner(config)
         self.tool_name = "subfinder"
+        self.target_domain = None  # ✅ FIX: Store target domain
     
     def run(self, target, output_file):
         """
@@ -27,6 +28,9 @@ class Subfinder:
         Returns:
             dict: Results with status and file path
         """
+        # ✅ FIX: Store the target domain
+        self.target_domain = target
+        
         # Check if tool is installed
         if not self.runner.check_tool_installed(self.tool_name):
             logger.error(f"[!] {self.tool_name} is not installed")
@@ -64,8 +68,18 @@ class Subfinder:
             # ✅ FIX: Remove duplicates
             unique_subdomains = list(set(subdomains))
             
-            # ✅ FIX: Log ACTUAL count, not log message count
-            logger.info(f"[✓] Subfinder found {len(unique_subdomains)} subdomains")
+            # ✅ FIX: Add root domain if not present
+            if target not in unique_subdomains:
+                unique_subdomains.append(target)
+                logger.info(f"[+] Added root domain: {target}")
+            
+            # ✅ FIX: Write back to file with root domain included
+            with open(output_file, 'w') as f:
+                for subdomain in sorted(unique_subdomains):
+                    f.write(f"{subdomain}\n")
+            
+            # ✅ FIX: Log ACTUAL count including root domain
+            logger.info(f"[✓] Subfinder found {len(unique_subdomains)} domains (including root)")
             
             return {
                 'status': 'success',
@@ -75,9 +89,13 @@ class Subfinder:
             }
         else:
             logger.warning(f"[!] subfinder failed or returned no results")
+            # ✅ FIX: Return at least the root domain
+            with open(output_file, 'w') as f:
+                f.write(f"{target}\n")
+            
             return {
                 'status': 'failed',
-                'subdomains': [],
-                'count': 0
+                'subdomains': [target],
+                'count': 1
             }
 
