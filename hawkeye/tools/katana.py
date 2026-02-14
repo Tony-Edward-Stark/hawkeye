@@ -50,36 +50,35 @@ class Katana:
             self.tool_name,
             '-list', str(input_file),
             '-o', str(output_file),
-            '-d', '10',  # ✅ FIX: Depth 10 (was 3) - matches manual usage
+            '-d', '10',  # ✅ FIX: Depth 10 (was 3)
             '-jc',  # JavaScript crawling
             '-kf', 'all',  # Known files
             '-timeout', '15',  # ✅ FIX: Increased timeout
-            '-silent',  # ✅ FIX: Silent mode for cleaner output
+            '-silent',
         ]
         
         # Adjust depth for quick/deep mode
         if self.config.get('quick_mode'):
             command[command.index('-d') + 1] = '2'
         elif self.config.get('deep_mode'):
-            command[command.index('-d') + 1] = '15'  # ✅ FIX: Deeper for deep mode
+            command[command.index('-d') + 1] = '15'
         
         # Add rate limiting
         rate_limit = self.config.get('rate_limit', 150)
         command.extend(['-rl', str(rate_limit)])
         
-        # Add concurrency (lower for stability)
+        # Add concurrency
         threads = min(self.config.get('threads', 50), 20)
         command.extend(['-c', str(threads)])
         
-        # Run the tool with LONGER timeout
+        # Run the tool (removed timeout parameter - not supported)
         logger.info(f"[*] Crawling {len(urls_to_crawl)} web applications...")
         success = self.runner.run_command(
             command,
-            tool_name=self.tool_name,
-            timeout=1800  # ✅ FIX: 30 min timeout (was probably 300)
+            tool_name=self.tool_name
         )
         
-        # ✅ FIX: Parse results from output file (not stdout)
+        # Parse results from output file
         if Path(output_file).exists() and Path(output_file).stat().st_size > 0:
             urls = set()
             with open(output_file, 'r') as f:
@@ -89,7 +88,6 @@ class Katana:
                         urls.add(line)
             
             if urls:
-                # ✅ FIX: Log actual count found
                 logger.info(f"[✓] Katana found {len(urls)} unique URLs")
                 logger.info(f"[*] Discovered {len(urls) - len(urls_to_crawl)} new URLs")
                 
@@ -100,7 +98,7 @@ class Katana:
                     'output_file': str(output_file)
                 }
         
-        # If katana found nothing, at least return the input URLs
+        # If katana found nothing, return input URLs
         logger.warning(f"[!] Katana found no new URLs")
         
         with open(output_file, 'w') as f:

@@ -58,7 +58,7 @@ class Naabu:
             logger.info(f"[*] Scanning ALL ports (1-65535) on {len(hosts)} hosts")
         
         # Add rate limiting
-        rate_limit = self.config.get('rate_limit', 1000)  # ✅ FIX: Increased default
+        rate_limit = self.config.get('rate_limit', 1000)
         command.extend(['-rate', str(rate_limit)])
         
         # Add threads
@@ -67,14 +67,13 @@ class Naabu:
         
         # ✅ FIX: Add retries and timeout
         command.extend(['-retries', '2'])
-        command.extend(['-timeout', '10000'])  # 10 seconds per probe
+        command.extend(['-timeout', '10000'])
         
-        # Run the tool with longer timeout
+        # Run the tool (removed timeout parameter - not supported by ToolRunner)
         logger.info(f"[*] Running fast port scan with naabu...")
         success = self.runner.run_command(
             command,
-            tool_name=self.tool_name,
-            timeout=900  # ✅ FIX: 15 min timeout for all ports
+            tool_name=self.tool_name
         )
         
         # Parse results
