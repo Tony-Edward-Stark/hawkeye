@@ -3,7 +3,6 @@
 """Dnsrecon tool wrapper"""
 
 from pathlib import Path
-import json
 from hawkeye.core.tool_runner import ToolRunner
 from hawkeye.ui.logger import get_logger
 
@@ -34,12 +33,12 @@ class Dnsrecon:
             logger.info("[*] Install: sudo apt install dnsrecon")
             return {'status': 'failed', 'reason': 'tool_not_found'}
         
-        # Build command - standard enumeration with JSON output
+        # Build command - standard enumeration
         command = [
             self.tool_name,
             '-d', target,
             '-t', 'std',  # Standard enumeration
-            '--json', str(output_file)  # ✅ FIX: JSON output
+            '--json', str(output_file)
         ]
         
         # Run the tool
@@ -49,35 +48,20 @@ class Dnsrecon:
             tool_name=self.tool_name
         )
         
-        # ✅ FIX: Parse results - count unique records correctly
+        # Parse results
         if success and Path(output_file).exists():
             try:
+                import json
                 with open(output_file, 'r') as f:
                     data = json.load(f)
                 
-                # DNSRecon JSON is a list of records
-                records = data if isinstance(data, list) else []
-                
-                # ✅ FIX: Count unique records (by type:name to avoid duplicates)
-                unique_records = []
-                seen = set()
-                
-                for record in records:
-                    record_type = record.get('type', '')
-                    name = record.get('name', '')
-                    key = f"{record_type}:{name}"
-                    
-                    if key not in seen:
-                        seen.add(key)
-                        unique_records.append(record)
-                
-                # ✅ FIX: Log actual unique record count
-                logger.info(f"[✓] DNSRecon found {len(unique_records)} unique DNS records")
+                record_count = len(data) if isinstance(data, list) else 0
+                logger.info(f"[✓] Found {record_count} DNS records")
                 
                 return {
                     'status': 'success',
-                    'records': unique_records,
-                    'count': len(unique_records),  # ✅ FIX: Unique count, not total
+                    'records': data,
+                    'count': record_count,
                     'output_file': str(output_file)
                 }
             except Exception as e:

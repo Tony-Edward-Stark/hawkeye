@@ -2,7 +2,6 @@
 """Dnsx tool wrapper"""
 
 from pathlib import Path
-import json
 from hawkeye.core.tool_runner import ToolRunner
 from hawkeye.ui.logger import get_logger
 
@@ -38,14 +37,13 @@ class Dnsx:
             logger.warning(f"[!] Input file not found: {input_file}")
             return {'status': 'failed', 'reason': 'no_input'}
         
-        # ✅ FIX: Use JSON output for better parsing
+        # Build command - get A records and CNAMEs
         command = [
             self.tool_name,
             '-l', str(input_file),
             '-a',  # A records
             '-cname',  # CNAME records
             '-resp',  # Show response
-            '-json',  # ✅ FIX: JSON output for better parsing
             '-silent',
             '-o', str(output_file)
         ]
@@ -57,43 +55,17 @@ class Dnsx:
             tool_name=self.tool_name
         )
         
-        # ✅ FIX: Parse results - count unique DOMAINS, not total DNS records
+        # Parse results
         if success and Path(output_file).exists():
-            unique_domains = set()
-            total_records = 0
-            
             with open(output_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    try:
-                        # Parse JSON
-                        data = json.loads(line)
-                        host = data.get('host', '')
-                        if host:
-                            unique_domains.add(host)
-                            total_records += 1
-                    except json.JSONDecodeError:
-                        # Fallback to plain text
-                        if line and not line.startswith('['):
-                            # Extract domain (first field)
-                            domain = line.split()[0] if line.split() else ''
-                            if domain:
-                                unique_domains.add(domain)
-                                total_records += 1
+                results = [line.strip() for line in f if line.strip()]
             
-            domain_list = list(unique_domains)
-            
-            # ✅ FIX: Log both unique domains AND total records for clarity
-            logger.info(f"[✓] DNSx: {len(domain_list)} unique domains ({total_records} total DNS records)")
+            logger.info(f"[✓] Enriched {len(results)} DNS records")
             
             return {
                 'status': 'success',
-                'dns_records': domain_list,
-                'count': len(domain_list),  # ✅ FIX: Count unique domains, not total records
-                'total_records': total_records,
+                'dns_records': results,
+                'count': len(results),
                 'output_file': str(output_file)
             }
         else:
