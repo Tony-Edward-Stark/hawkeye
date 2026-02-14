@@ -1,5 +1,4 @@
-
-"""Ffuf tool wrapper"""
+"""FFUF tool wrapper with SecLists defaults"""
 
 from pathlib import Path
 from hawkeye.core.tool_runner import ToolRunner
@@ -8,20 +7,70 @@ from hawkeye.ui.logger import get_logger
 logger = get_logger()
 
 class Ffuf:
-    """Wrapper for ffuf fuzzing tool"""
+    """Wrapper for ffuf fuzzer"""
+    
+    # ✅ FIX: Default SecLists wordlists
+    DEFAULT_WORDLISTS = {
+        'directories': '/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt',
+        'files': '/usr/share/seclists/Discovery/Web-Content/raft-medium-files.txt',
+        'common': '/usr/share/seclists/Discovery/Web-Content/common.txt',
+        'big': '/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt',
+    }
     
     def __init__(self, config):
         self.config = config
         self.runner = ToolRunner(config)
         self.tool_name = "ffuf"
     
-    def run(self, urls_file, wordlist, output_file):
+    def _get_wordlist(self, wordlist_path):
         """
-        Run ffuf for directory/file fuzzing
+        Get wordlist path, fallback to SecLists if not found
         
         Args:
-            urls_file: File with base URLs to fuzz
-            wordlist: Wordlist file path
+            wordlist_path: Requested wordlist path
+            
+        Returns:
+            str: Valid wordlist path
+        """
+        # ✅ FIX: Check if provided wordlist exists and is not empty
+        if wordlist_path and Path(wordlist_path).exists():
+            size = Path(wordlist_path).stat().st_size
+            if size > 0:
+                logger.info(f"[*] Using wordlist: {wordlist_path} ({size} bytes)")
+                return wordlist_path
+            else:
+                logger.warning(f"[!] Wordlist is empty: {wordlist_path}")
+        
+        # ✅ FIX: Fall back to SecLists
+        default_wordlist = self.DEFAULT_WORDLISTS['directories']
+        
+        if Path(default_wordlist).exists():
+            logger.info(f"[*] Using default SecLists wordlist: {default_wordlist}")
+            return default_wordlist
+        else:
+            # Try alternative locations
+            alternatives = [
+                '/usr/share/wordlists/seclists/Discovery/Web-Content/raft-medium-directories.txt',
+                '/opt/SecLists/Discovery/Web-Content/raft-medium-directories.txt',
+                self.DEFAULT_WORDLISTS['common'],  # Smaller fallback
+            ]
+            
+            for alt in alternatives:
+                if Path(alt).exists():
+                    logger.info(f"[*] Using alternative wordlist: {alt}")
+                    return alt
+            
+            logger.error("[!] No valid wordlist found!")
+            logger.error("[!] Install SecLists: sudo apt install seclists")
+            return None
+    
+    def run(self, url, wordlist, output_file):
+        """
+        Run FFUF for directory/file discovery
+        
+        Args:
+            url: Target URL
+            wordlist: Wordlist file path (can be None/empty)
             output_file: Path to save results
         
         Returns:
@@ -33,95 +82,61 @@ class Ffuf:
             logger.info("[*] Install: go install github.com/ffuf/ffuf/v2@latest")
             return {'status': 'failed', 'reason': 'tool_not_found'}
         
-        # Check if input file exists
-        if not Path(urls_file).exists():
-            logger.warning(f"[!] URLs file not found: {urls_file}")
-            return {'status': 'failed', 'reason': 'no_input'}
-        
-        # Check wordlist
-        if not wordlist or not Path(wordlist).exists():
-            logger.warning(f"[!] Wordlist not found: {wordlist}")
+        # ✅ FIX: Get valid wordlist (with SecLists fallback)
+        wordlist = self._get_wordlist(wordlist)
+        if not wordlist:
             return {'status': 'failed', 'reason': 'no_wordlist'}
         
-        # Read URLs
-        with open(urls_file, 'r') as f:
-            urls = [line.strip() for line in f if line.strip() and line.strip().startswith('http')]
+        # Build command
+        command = [
+            self.tool_name,
+            '-u', url,
+            '-w', wordlist,
+            '-mc', 'all',                   # Match all status codes
+            '-fc', '404',                   # Filter 404
+            '-recursion',                   # Enable recursion
+            '-recursion-depth', '2',
+            '-e', '.php,.html,.htm,.txt,.js,.json,.xml,.bak,.old,.zip',
+            '-o', str(output_file),
+            '-of', 'json',
+            '-t', '50',
+            '-timeout', '10',
+            '-maxtime', '1800',
+            '-rate', '150',
+            '-s',                           # Silent
+            '-noninteractive',
+        ]
         
-        if not urls:
-            logger.warning("[!] No valid URLs to fuzz")
-            return {'status': 'failed', 'reason': 'no_urls'}
+        # Run the tool
+        logger.info(f"[*] Running: ffuf ({url})")
+        success = self.runner.run_command(
+            command,
+            tool_name=f"{self.tool_name} ({url})"
+        )
         
-        logger.info(f"[*] Fuzzing {len(urls)} URLs with ffuf...")
-        
-        discovered_paths = []
-        
-        # Fuzz each URL
-        for idx, url in enumerate(urls[:5], 1):  # Limit to 5 URLs for reasonable time
-            logger.info(f"[*] Fuzzing [{idx}/{min(5, len(urls))}]: {url}")
-            
-            # Build command
-            fuzz_url = url.rstrip('/') + '/FUZZ'
-            temp_output = Path(output_file).parent / f'ffuf_temp_{idx}.json'
-            
-            command = [
-                self.tool_name,
-                '-u', fuzz_url,
-                '-w', str(wordlist),
-                '-mc', '200,204,301,302,307,401,403',  # Match codes
-                '-fc', '404',  # Filter 404s
-                '-o', str(temp_output),
-                '-of', 'json',
-                '-t', str(self.config.get('threads', 40)),
-                '-rate', str(self.config.get('rate_limit', 150)),
-                '-s'  # Silent mode
-            ]
-            
-            # Add recursion for deep mode
-            if self.config.get('deep_mode'):
-                command.extend(['-recursion', '-recursion-depth', '2'])
-            
-            # Run ffuf
-            success = self.runner.run_command(
-                command,
-                tool_name=f"{self.tool_name} ({url})"
-            )
-            
-            # Parse JSON output
-            if success and temp_output.exists():
-                try:
-                    import json
-                    with open(temp_output, 'r') as f:
-                        data = json.load(f)
-                        results = data.get('results', [])
-                        for result in results:
-                            path = result.get('url', '')
-                            status = result.get('status', '')
-                            length = result.get('length', 0)
-                            discovered_paths.append(f"{path} [{status}] ({length})")
-                except Exception as e:
-                    logger.warning(f"[!] Failed to parse ffuf output: {e}")
-        
-        # Save combined results
-        if discovered_paths:
-            with open(output_file, 'w') as f:
-                for path in discovered_paths:
-                    f.write(f"{path}\n")
-            
-            logger.info(f"[✓] Found {len(discovered_paths)} paths")
-            
-            return {
-                'status': 'success',
-                'paths': discovered_paths,
-                'count': len(discovered_paths),
-                'output_file': str(output_file)
-            }
+        # Parse results
+        if success and Path(output_file).exists():
+            try:
+                import json
+                with open(output_file, 'r') as f:
+                    data = json.load(f)
+                
+                results = data.get('results', [])
+                
+                if results:
+                    logger.info(f"[✓] ffuf ({url}) found {len(results)} paths")
+                else:
+                    logger.info(f"[✓] ffuf ({url}) completed (no results)")
+                
+                return {
+                    'status': 'success',
+                    'paths': results,
+                    'count': len(results),
+                    'output_file': str(output_file)
+                }
+            except Exception as e:
+                logger.warning(f"[!] Error parsing ffuf output: {e}")
+                return {'status': 'failed', 'paths': [], 'count': 0}
         else:
-            logger.warning(f"[!] No paths discovered")
-            Path(output_file).touch()
-            return {
-                'status': 'completed',
-                'paths': [],
-                'count': 0,
-                'output_file': str(output_file)
-            }
-
+            logger.warning(f"[!] ffuf ({url}) failed or returned no results")
+            return {'status': 'failed', 'paths': [], 'count': 0}
